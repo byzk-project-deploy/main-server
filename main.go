@@ -1,7 +1,11 @@
 package main
 
-import "github.com/byzk-project-deploy/main-server/db"
+import (
+	_ "github.com/byzk-project-deploy/main-server/db"
+	_ "github.com/byzk-project-deploy/main-server/logs"
+	"github.com/byzk-project-deploy/main-server/server"
+)
 
 func main() {
-	db.InitDb()
+	server.Run()
 }
