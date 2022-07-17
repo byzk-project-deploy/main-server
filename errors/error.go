@@ -30,6 +30,10 @@ const (
 	ExitUnixSocketListener
 	// ExitServerListenerExit 服务监听退出
 	ExitServerListenerExit
+	// ExitSSHServerListener ssh服务监听失败
+	ExitSSHServerListener
+	// ExitSSHServerListener ssh服务监听退出
+	ExitSSHServerListenerExit
 )
 
 func (e ExitCode) Println(formatStr string, args ...any) {

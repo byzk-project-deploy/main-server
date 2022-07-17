@@ -1,14 +1,22 @@
 package server
 
 import (
-	"github.com/byzk-project-deploy/main-server/config"
-	"github.com/byzk-project-deploy/main-server/errors"
-	logs "github.com/byzk-worker/go-common-logs"
+	"bufio"
+	"bytes"
 	"io"
 	"net"
 	"os"
 	"path/filepath"
 	"strconv"
+
+	"github.com/byzk-project-deploy/main-server/config"
+	"github.com/byzk-project-deploy/main-server/errors"
+	serverclientcommon "github.com/byzk-project-deploy/server-client-common"
+	logs "github.com/byzk-worker/go-common-logs"
+)
+
+const (
+	endFlag = '\n'
 )
 
 var (
@@ -24,11 +32,6 @@ var unixFilePath = filepath.Join(os.TempDir(), ".bypt.socket")
 
 func init() {
 	_ = os.RemoveAll(unixFilePath)
-	//f, err := os.Create(unixFilePath)
-	//if err != nil {
-	//	errors.ExitUnixSocketFileCreate.Println("创建通信交互文件失败: %s", err.Error())
-	//}
-	//_ = f.Close()
 }
 
 func listenerServer(config *config.Info) {
@@ -86,7 +89,35 @@ func listenerHandle(serverName string, endExit bool, listener net.Listener) {
 }
 
 func connHandle(conn net.Conn) {
+	defer conn.Close()
+	rw := bufio.NewReadWriter(bufio.NewReader(conn), bufio.NewWriter(conn))
+	lineBuf := &bytes.Buffer{}
+	cmd := ""
+	for {
+		line, isPrefix, err := rw.ReadLine()
+		if err != nil {
+			return
+		}
 
+		if isPrefix {
+			lineBuf.Write(line)
+			continue
+		}
+
+		if lineBuf.Len() > 0 {
+			line = append(lineBuf.Bytes(), line...)
+			lineBuf.Reset()
+		}
+
+		if cmd == "" {
+			cmd = string(line)
+			serverclientcommon.SuccessResult(cmd).WriteTo(rw)
+			continue
+		}
+
+		serverclientcommon.CmdRoute(cmd, line, rw)
+		cmd = ""
+	}
 }
 
 func Run() {
