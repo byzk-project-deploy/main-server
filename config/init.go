@@ -1,13 +1,14 @@
 package config
 
 import (
+	"os"
+	"path/filepath"
+
 	"github.com/byzk-project-deploy/main-server/errors"
 	"github.com/byzk-project-deploy/main-server/user"
 	logs "github.com/byzk-worker/go-common-logs"
 	"github.com/fsnotify/fsnotify"
 	"github.com/spf13/viper"
-	"os"
-	"path/filepath"
 )
 
 type WatchRunFn func(config *Info)
@@ -28,16 +29,24 @@ var (
 	currentConfig *Info
 )
 
+func Current() *Info {
+	return currentConfig
+}
+
 func init() {
 
 	viper.SetConfigFile(configFilePath)
 	viper.SetConfigType("toml")
-	viper.SetDefault("listener.allow-remote-control", false)
+	viper.SetDefault("listener.allowRemoteControl", false)
 	viper.SetDefault("listener.ip", "127.0.0.1")
 	viper.SetDefault("listener.port", "65526")
 	viper.SetDefault("database.path", databaseFilePath)
 	viper.SetDefault("logs.level", "info")
 	viper.SetDefault("logs.path", logDirPath)
+	viper.SetDefault("shell.current", "/usr/bin/sh")
+	viper.SetDefault("shell.args", "-i -c")
+	viper.SetDefault("shell.allowShellListFile", "/etc/shells")
+	viper.SetDefault("shell.allowShellList", []string{})
 
 	stat, err := os.Stat(configFilePath)
 	if err != nil || stat.IsDir() {

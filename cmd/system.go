@@ -1,87 +1,31 @@
 package cmd
 
 import (
+	"os"
+	"strings"
+
 	"github.com/byzk-project-deploy/main-server/passwd"
 	"github.com/byzk-project-deploy/main-server/sfnake"
+	"github.com/byzk-project-deploy/main-server/shell"
 	"github.com/byzk-project-deploy/main-server/ssh"
 	serverclientcommon "github.com/byzk-project-deploy/server-client-common"
+	"github.com/spf13/viper"
 )
 
-// func init() {
-// 	serverclientcommon.CmdSystemCall.Registry(systemCallHandle)
-// }
-
-// type serverCmdStdinWrapper struct {
-// 	w        io.WriteCloser
-// 	rw       serverclientcommon.RWStreamInterface
-// 	lineBuf  *bytes.Buffer
-// 	stopFlag chan struct{}
-// }
-
-// func (s *serverCmdStdinWrapper) Start() {
-// 	s.lineBuf = &bytes.Buffer{}
-// 	s.stopFlag = make(chan struct{}, 1)
-// 	for {
-// 		l, isPrefix, err := s.rw.ReadLine()
-// 		if err != nil {
-// 			s.stopFlag <- struct{}{}
-// 			return
-// 		}
-// 		if isPrefix {
-// 			s.lineBuf.Write(l)
-// 			continue
-// 		}
-
-// 		r := &serverclientcommon.Result{}
-// 		if err = r.Parse(l); err != nil {
-// 			logs.Errorf("cmd stdin 包装器读取数据失败: %s", err.Error())
-// 			continue
-// 		}
-
-// 		if r.StreamEnd {
-// 			s.stopFlag <- struct{}{}
-// 			return
-// 		}
-
-// 		var lineData []byte
-// 		if err = r.Data.Unmarshal(&lineData); err != nil {
-// 			logs.Errorf("cmd stdin 包装器从数据包中解构数据内容失败: %s", err.Error())
-// 			continue
-// 		}
-
-// 		s.w.Write(lineData)
-
-// 	}
-
-// }
-
-// func (s *serverCmdStdinWrapper) WaitStop() {
-// 	<-s.stopFlag
-// 	s.lineBuf.Reset()
-// 	s.lineBuf = nil
-// }
-
-// type serverCmdStderrWrapper struct {
-// 	rw serverclientcommon.RWStreamInterface
-// }
-
-// func (s *serverCmdStderrWrapper) Write(p []byte) (n int, err error) {
-// 	err = serverclientcommon.ErrSystemCall.ResultWithData("系统调用异常", p).WriteTo(s.rw)
-// 	s.rw.Flush()
-// 	return len(p), err
-// }
-
-// type serverCmdStdoutWrapper struct {
-// 	rw serverclientcommon.RWStreamInterface
-// }
-
-// func (s *serverCmdStdoutWrapper) Write(p []byte) (n int, err error) {
-// 	err = serverclientcommon.SuccessResult(p).WriteTo(s.rw)
-// 	s.rw.Flush()
-// 	return len(p), err
-// }
-
 var (
+	// systemDirPathVerifyHandle 验证系统目录是否存在
+	systemDirPathVerifyHandle serverclientcommon.CmdHandler = func(result *serverclientcommon.Result, conn serverclientcommon.RWStreamInterface) *serverclientcommon.Result {
+		var targetPath *string
+		if err := result.Data.Unmarshal(&targetPath); err != nil {
+			return serverclientcommon.ErrValidation.Result("缺失路径参数")
+		}
+
+		exist := false
+		if stat, err := os.Stat(*targetPath); err == nil && stat.IsDir() {
+			exist = true
+		}
+		return serverclientcommon.SuccessResult(exist)
+	}
 	// systemCallHandle 系统调用处理
 	systemCallHandle serverclientcommon.CmdHandler = func(result *serverclientcommon.Result, rw serverclientcommon.RWStreamInterface) *serverclientcommon.Result {
 
@@ -105,48 +49,51 @@ var (
 
 		ssh.AddPasswd(cId, passwd+cliRand)
 
-		// if callOption.BashName == "" {
-		// 	return serverclientcommon.ErrValidation.Result("未正确配置当前Shell环境")
-		// }
-
-		// if callOption.WorkDir == "" {
-		// 	return serverclientcommon.ErrValidation.Result("系统调用工作路径不能为空")
-		// }
-
-		// env := os.Environ()
-		// if callOption.Env != nil {
-		// 	env = append(env, callOption.Env...)
-		// }
-
-		// cmd := exec.Command(callOption.BashName, append(callOption.BaseArgs, callOption.Name)...)
-		// cmd.Dir = callOption.WorkDir
-		// cmd.Env = env
-		// cmd.Stdout = &serverCmdStdoutWrapper{rw: rw}
-		// cmd.Stderr = &serverCmdStderrWrapper{rw: rw}
-		// cmd.Stdin = os.Stdin
-		// // var cmdStdinWrapper *serverCmdStdinWrapper
-		// // if wc, err := cmd.StdinPipe(); err == nil {
-		// // 	cmdStdinWrapper = &serverCmdStdinWrapper{w: wc, rw: rw}
-		// // 	go cmdStdinWrapper.Start()
-		// // }
-
-		// if err := cmd.Start(); err != nil {
-		// 	return serverclientcommon.ErrSystemCall.Result("系统调用异常: " + err.Error())
-		// }
-
-		// if err := cmd.Wait(); err != nil {
-		// 	return serverclientcommon.ErrSystemCall.Result("系统调用结果等待异常: " + err.Error())
-		// }
-
-		// if cmdStdinWrapper != nil {
-		// 	serverclientcommon.ErrSystemCallEnd.Result("").WriteTo(rw)
-		// 	cmdStdinWrapper.WaitStop()
-		// }
-
 		return serverclientcommon.SuccessResult(callOption)
 	}
 
-	// systemShellCurrentHandle serverclientcommon.CmdHandler = func(result *serverclientcommon.Result, conn serverclientcommon.RWStreamInterface) *serverclientcommon.Result {
+	// stemShellListHandle 系统可用shell列表获取
+	stemShellListHandle serverclientcommon.CmdHandler = func(result *serverclientcommon.Result, conn serverclientcommon.RWStreamInterface) *serverclientcommon.Result {
+		allowShellList := shell.AllowList()
+		res := make([]string, len(allowShellList))
+		for i := range allowShellList {
+			res[i] = allowShellList[i] + " "
+		}
+		return serverclientcommon.SuccessResult(res)
+	}
 
-	// }
+	// systemShellCurrentGetHandle 系统调用当前shell环境获取
+	systemShellCurrentGetHandle serverclientcommon.CmdHandler = func(result *serverclientcommon.Result, conn serverclientcommon.RWStreamInterface) *serverclientcommon.Result {
+		currentShell := strings.TrimSpace(viper.GetString("shell.current"))
+		currentShellArgs := strings.TrimSpace(viper.GetString("shell.args"))
+
+		return serverclientcommon.SuccessResult(currentShell + " " + currentShellArgs)
+	}
+
+	// systemShellCurrentSettingHandle 系统调用设置当前shell环境
+	systemShellCurrentSettingHandle serverclientcommon.CmdHandler = func(result *serverclientcommon.Result, conn serverclientcommon.RWStreamInterface) *serverclientcommon.Result {
+		var options *serverclientcommon.ShellSettingOption
+		if err := result.Data.Unmarshal(&options); err != nil {
+			return serverclientcommon.ErrValidation.Result(err.Error())
+		}
+
+		if options.Name == "" {
+			return serverclientcommon.ErrValidation.Result("缺失shell名称")
+		}
+
+		allowShellList := shell.AllowList()
+
+		for i := range allowShellList {
+			if allowShellList[i] == options.Name {
+				goto End
+			}
+		}
+		return serverclientcommon.ErrValidation.Result("未被允许的shell名称")
+	End:
+		viper.Set("shell.current", options.Name)
+		viper.Set("shell.args", strings.Join(options.Args, " "))
+		viper.WriteConfig()
+
+		return serverclientcommon.SuccessResultEmpty()
+	}
 )

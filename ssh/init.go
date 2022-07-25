@@ -11,7 +11,9 @@ import (
 	"time"
 	"unsafe"
 
+	"github.com/byzk-project-deploy/main-server/config"
 	"github.com/byzk-project-deploy/main-server/errors"
+	serverclientcommon "github.com/byzk-project-deploy/server-client-common"
 	logs "github.com/byzk-worker/go-common-logs"
 	"github.com/creack/pty"
 	"github.com/gliderlabs/ssh"
@@ -35,15 +37,29 @@ func setWinsize(f *os.File, w, h int) {
 func init() {
 	ssh.Handle(func(s ssh.Session) {
 		cmdArgList := s.Command()
-		fmt.Println(cmdArgList)
-		cmdStr := cmdArgList[0]
-		cmdArgList = cmdArgList[1:]
-		cmd := exec.Command(cmdStr, cmdArgList...)
+		cmdAndArgsStr := strings.Join(cmdArgList, " ")
+		shellConfig := config.Current().Shell
+		shellName := strings.TrimSpace(shellConfig.Current)
+		shellArgs := strings.Split(strings.TrimSpace(shellConfig.Args), " ")
+		shellArgs = append(shellArgs, cmdAndArgsStr)
+
+		cmd := exec.Command(shellName, shellArgs...)
 		ptyReq, winCh, isPty := s.Pty()
+
+		cmd.Env = append(cmd.Env, os.Environ()...)
+		cmd.Env = append(cmd.Env, "SHELL="+shellName)
+		systemCallOption, err := serverclientcommon.SystemCallCommandRunOptionUnmarshal(s)
+		if err == nil {
+			if cmd.Env != nil {
+				cmd.Env = append(cmd.Env, systemCallOption.Env...)
+			}
+			if systemCallOption.WorkDir != "" {
+				cmd.Dir = systemCallOption.WorkDir
+			}
+		}
+
 		if isPty {
 			cmd.Env = append(cmd.Env, fmt.Sprintf("TERM=%s", ptyReq.Term))
-			cmd.Env = append(cmd.Env, s.Environ()...)
-			cmd.Env = append(cmd.Env, os.Environ()...)
 
 			f, err := pty.Start(cmd)
 			if err != nil {

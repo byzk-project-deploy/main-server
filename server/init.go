@@ -15,10 +15,6 @@ import (
 	logs "github.com/byzk-worker/go-common-logs"
 )
 
-const (
-	endFlag = '\n'
-)
-
 var (
 	listener     net.Listener
 	unixListener net.Listener

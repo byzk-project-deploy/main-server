@@ -1,8 +1,9 @@
 package config
 
 import (
-	"github.com/sirupsen/logrus"
 	"strings"
+
+	"github.com/sirupsen/logrus"
 )
 
 // Info 配置信息
@@ -13,6 +14,8 @@ type Info struct {
 	Database *Database
 	// Logs 日志配置
 	Logs *LogConfig
+	// Shell shell配置
+	Shell *ShellConfig
 }
 
 // Listener 监听配置
@@ -62,4 +65,16 @@ type LogConfig struct {
 	Path string
 	// Level 日志等级
 	Level LogLevelStr
+}
+
+// ShellConfig shell配置
+type ShellConfig struct {
+	// Current 当前shell
+	Current string
+	// Args 参数
+	Args string
+	// AllowShellList 允许的shell列表
+	AllowShellList []string
+	// AllowShellListFile 允许的shell列表文件，一行一个与 AllowShellList 并集
+	AllowShellListFile string
 }
