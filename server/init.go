@@ -2,7 +2,7 @@ package server
 
 import (
 	"bufio"
-	"bytes"
+	transport_stream "github.com/go-base-lib/transport-stream"
 	"io"
 	"net"
 	"os"
@@ -87,32 +87,11 @@ func listenerHandle(serverName string, endExit bool, listener net.Listener) {
 func connHandle(conn net.Conn) {
 	defer conn.Close()
 	rw := bufio.NewReadWriter(bufio.NewReader(conn), bufio.NewWriter(conn))
-	lineBuf := &bytes.Buffer{}
-	cmd := ""
+	stream := transport_stream.NewStream(rw)
 	for {
-		line, isPrefix, err := rw.ReadLine()
-		if err != nil {
+		if err := serverclientcommon.CmdRoute(stream, conn); err == io.EOF {
 			return
 		}
-
-		if isPrefix {
-			lineBuf.Write(line)
-			continue
-		}
-
-		if lineBuf.Len() > 0 {
-			line = append(lineBuf.Bytes(), line...)
-			lineBuf.Reset()
-		}
-
-		if cmd == "" {
-			cmd = string(line)
-			serverclientcommon.SuccessResult(cmd).WriteTo(rw)
-			continue
-		}
-
-		serverclientcommon.CmdRoute(cmd, line, rw)
-		cmd = ""
 	}
 }
 
