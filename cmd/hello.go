@@ -13,5 +13,5 @@ var helloCmdHandler serverclientcommon.CmdHandler = func(stream *transport_strea
 		return nil, serverclientcommon.ErrCodeValidation.New("缺失请求参数")
 	}
 
-	return nil, nil
+	return serverclientcommon.ExchangeData("World"), nil
 }

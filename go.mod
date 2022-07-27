@@ -3,7 +3,7 @@ module github.com/byzk-project-deploy/main-server
 go 1.18
 
 require (
-	github.com/byzk-project-deploy/server-client-common v0.0.0-20220726090705-c2ce73e00829
+	github.com/byzk-project-deploy/server-client-common v0.0.0-20220727055328-8742ed021de1
 	github.com/byzk-worker/go-common-logs v0.0.0-20220706092046-61e325f0c65c
 	github.com/byzk-worker/go-db-utils v0.0.0-20220706170431-c3faa2b05109
 	github.com/creack/pty v1.1.18
@@ -45,6 +45,7 @@ require (
 	github.com/subosito/gotenv v1.3.0 // indirect
 	github.com/tjfoc/gmsm v1.4.0 // indirect
 	golang.org/x/crypto v0.0.0-20220622213112-05595931fe9d // indirect
+	golang.org/x/exp v0.0.0-20220722155223-a9213eeb770e // indirect
 	golang.org/x/sys v0.0.0-20220520151302-bc2c85ada10a // indirect
 	golang.org/x/text v0.3.7 // indirect
 	gopkg.in/ini.v1 v1.66.4 // indirect

@@ -42,6 +42,10 @@ func listenerServer(config *config.Info) {
 		return
 	}
 
+	if listener != nil {
+		_ = listener.Close()
+	}
+
 	tempListenerAddr := config.Listener.Ip + ":" + strconv.FormatUint(config.Listener.Port, 10)
 	if tempListenerAddr == listenerAddr {
 		return
