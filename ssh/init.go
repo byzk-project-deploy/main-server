@@ -73,28 +73,6 @@ func init() {
 		}
 		errors.ExitSSHServerListenerExit.Exit()
 	}()
-
-	//sshListenerPort = l.Addr().String()
-	//i := strings.LastIndexByte(sshListenerPort, ':')
-	//if i >= 0 {
-	//	sshListenerPort = sshListenerPort[i:]
-	//}
-	//
-	//logs.Infof("system ssh server listener %s", sshListenerPort)
-	//go func() {
-	//	if err = ssh.Serve(l, nil, ssh.PasswordAuth(func(ctx ssh.Context, password string) bool {
-	//		s := ctx.User()
-	//		if passwd, ok := passwdCache.Get(s); !ok || passwd != password {
-	//			return false
-	//		}
-	//		passwdCache.Delete(s)
-	//		return true
-	//	})); err != nil {
-	//		logs.Errorf("命令转发服务异常停止，请尝试重新启动: %s", err.Error())
-	//		errors.ExitSSHServerListenerExit.Exit()
-	//	}
-	//	errors.ExitSSHServerListenerExit.Exit()
-	//}()
 }
 
 func CurrentRemoteSSHAddr(name string) (string, string, error) {

@@ -34,7 +34,7 @@ func Current() *Info {
 }
 
 func init() {
-
+	err := initOsAndArch()
 	viper.SetConfigFile(configFilePath)
 	viper.SetConfigType("toml")
 	viper.SetDefault("listener.allowRemoteControl", false)

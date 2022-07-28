@@ -48,7 +48,10 @@ var (
 
 			f, err := pty.Start(cmd)
 			if err != nil {
-				io.WriteString(s, "命令执行失败: "+err.Error())
+				_, _ = io.WriteString(s, "命令执行失败: "+err.Error())
+				_ = s.Exit(1)
+				return
+
 			}
 			go func() {
 				for win := range winCh {
@@ -56,15 +59,15 @@ var (
 				}
 			}()
 			go func() {
-				io.Copy(f, s) // stdin
+				_, _ = io.Copy(f, s) // stdin
 			}()
-			io.Copy(s, f) // stdout
-			cmd.Wait()
-			s.Exit(0)
+			_, _ = io.Copy(s, f) // stdout
+			_ = cmd.Wait()
+			_ = s.Exit(0)
 
 		} else {
-			io.WriteString(s, "No PTY requested.\n")
-			s.Exit(1)
+			_, _ = io.WriteString(s, "No PTY requested.\n")
+			_ = s.Exit(1)
 		}
 	}
 )
