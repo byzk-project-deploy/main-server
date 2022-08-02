@@ -21,6 +21,7 @@ var (
 var (
 	databaseFilePath = filepath.Join(configDirPath, "db", "local.data")
 	logDirPath       = filepath.Join(configDirPath, "logs")
+	pluginStorePath  = filepath.Join(configDirPath, "plugins")
 )
 
 var (
@@ -47,6 +48,7 @@ func init() {
 	viper.SetDefault("shell.args", "-i -c")
 	viper.SetDefault("shell.allowShellListFile", "/etc/shells")
 	viper.SetDefault("shell.allowShellList", []string{})
+	viper.SetDefault("plugin.storePath", pluginStorePath)
 
 	stat, err := os.Stat(configFilePath)
 	if err != nil || stat.IsDir() {

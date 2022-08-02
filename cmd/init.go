@@ -9,4 +9,8 @@ func init() {
 	serverclientcommon.CmdSystemDirPath.Registry(systemDirPathVerifyHandle)
 	serverclientcommon.CmdSystemShellCurrent.Registry(systemShellCurrentGetHandle)
 	serverclientcommon.CmdSystemShellCurrentSetting.Registry(systemShellCurrentSettingHandle)
+	serverclientcommon.CmdPluginInstall.Registry(pluginInstallCmd)
+	serverclientcommon.CmdPluginList.Registry(pluginListCmd)
+	serverclientcommon.CmdPluginInfoPromptList.Registry(pluginInfoPromptCmd)
+	serverclientcommon.CmdPluginInfo.Registry(pluginInfoCmd)
 }

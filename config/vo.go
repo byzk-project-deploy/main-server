@@ -16,6 +16,14 @@ type Info struct {
 	Logs *LogConfig
 	// Shell shell配置
 	Shell *ShellConfig
+	// Plugin 插件配置
+	Plugin *PluginConfig
+}
+
+// PluginConfig 插件配置
+type PluginConfig struct {
+	// StorePath 存放路径
+	StorePath string
 }
 
 // Listener 监听配置

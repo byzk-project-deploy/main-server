@@ -4,7 +4,7 @@ import (
 	"fmt"
 	"github.com/byzk-project-deploy/main-server/config"
 	"github.com/byzk-project-deploy/main-server/errors"
-	"github.com/byzk-project-deploy/main-server/vos"
+	serverclientcommon "github.com/byzk-project-deploy/server-client-common"
 	dbutils "github.com/byzk-worker/go-db-utils"
 	"github.com/byzk-worker/go-db-utils/sqlite"
 	_ "github.com/jinzhu/gorm/dialects/sqlite"
@@ -45,7 +45,7 @@ func configWatch(config *config.Info) {
 func initDataTable() {
 	sqlite.Db().Exec("PRAGMA auto_vacuum = 1;")
 	if err := sqlite.Db().
-		AutoMigrate(&vos.DbPluginInfo{}).
+		AutoMigrate(&serverclientcommon.DbPluginInfo{}).
 		Error; err != nil {
 		errors.ExitDatabaseCreateTable.Println("创建数据库表失败, 错误信息: %s", err.Error())
 	}

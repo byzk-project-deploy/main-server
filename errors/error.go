@@ -20,6 +20,8 @@ const (
 	ExitConfigFileParser
 	// ExitDatabaseOpen 数据库打开失败
 	ExitDatabaseOpen
+	// ExitDatabaseQuery 数据库查询失败
+	ExitDatabaseQuery
 	// ExitDatabaseCreateTable 创建数据库表失败
 	ExitDatabaseCreateTable
 	// ExitLogDirCreate 创建日志目录失败
@@ -32,7 +34,7 @@ const (
 	ExitServerListenerExit
 	// ExitSSHServerListener ssh服务监听失败
 	ExitSSHServerListener
-	// ExitSSHServerListener ssh服务监听退出
+	// ExitSSHServerListenerExit ssh服务监听退出
 	ExitSSHServerListenerExit
 )
 

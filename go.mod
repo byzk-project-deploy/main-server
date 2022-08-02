@@ -3,8 +3,9 @@ module github.com/byzk-project-deploy/main-server
 go 1.18
 
 require (
-	github.com/byzk-project-deploy/base-interface v0.0.0-20220728090748-42a8becae00f
-	github.com/byzk-project-deploy/server-client-common v0.0.0-20220727055328-8742ed021de1
+	github.com/byzk-project-deploy/base-interface v0.0.0-20220730184505-463916a55621
+	github.com/byzk-project-deploy/packaging-plugin v0.0.0-20220731133512-d1def02384ab
+	github.com/byzk-project-deploy/server-client-common v0.0.0-20220802090937-ccdf7fd989ae
 	github.com/byzk-worker/go-common-logs v0.0.0-20220706092046-61e325f0c65c
 	github.com/byzk-worker/go-db-utils v0.0.0-20220706170431-c3faa2b05109
 	github.com/creack/pty v1.1.18
@@ -32,6 +33,7 @@ require (
 	github.com/hashicorp/go-hclog v1.2.0 // indirect
 	github.com/hashicorp/hcl v1.0.0 // indirect
 	github.com/hashicorp/yamux v0.0.0-20180604194846-3520598351bb // indirect
+	github.com/iancoleman/orderedmap v0.2.0 // indirect
 	github.com/jinzhu/inflection v1.0.0 // indirect
 	github.com/lestrrat-go/file-rotatelogs v2.4.0+incompatible // indirect
 	github.com/lestrrat-go/strftime v1.0.6 // indirect
