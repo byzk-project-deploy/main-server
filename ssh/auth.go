@@ -13,7 +13,7 @@ func AddPasswd(flag, password string) {
 	passwdCache.SetDefault(flag, password)
 }
 
-var authOption ssh.Option = ssh.PasswordAuth(func(ctx ssh.Context, password string) bool {
+var authOption = ssh.PasswordAuth(func(ctx ssh.Context, password string) bool {
 	s := ctx.User()
 	if passwd, ok := passwdCache.Get(s); !ok || passwd != password {
 		return false

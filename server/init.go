@@ -3,6 +3,7 @@ package server
 import (
 	"bufio"
 	transport_stream "github.com/go-base-lib/transport-stream"
+	"github.com/tjfoc/gmsm/gmtls"
 	"io"
 	"net"
 	"os"
@@ -36,7 +37,7 @@ func listenerServer(config *config.Info) {
 	if !config.Listener.AllowRemoteControl {
 		if listener != nil {
 			_ = listener.Close()
-			logs.Info("远程控制服务已成功停止, 地址: %s", listenerAddr)
+			logs.Infof("远程控制服务已成功停止, 地址: %s", listenerAddr)
 		}
 		listenerAddr = ""
 		return
@@ -71,14 +72,14 @@ func listenerHandle(serverName string, endExit bool, listener net.Listener) {
 		if err != nil {
 			if err == io.EOF {
 				if endExit {
-					logs.Info("服务[%s], 监听地址: [%s], 正常退出", serverName, listener.Addr().String())
+					logs.Infof("服务[%s], 监听地址: [%s], 正常退出", serverName, listener.Addr().String())
 					errors.ExitServerListenerExit.Exit()
 				}
 				return
 			}
 
 			if endExit {
-				logs.Errorf("服务[%s]异常退出")
+				logs.Errorf("服务[%s]异常退出", err.Error())
 				errors.ExitServerListenerExit.Exit()
 			}
 
@@ -103,12 +104,16 @@ func Run() {
 	var err error
 
 	config.AddWatchAndNowExec(listenerServer)
+	unixTlsConfig, err := TlsManager.GetTlsServerConfig("BYPT LOCAL SERVER", "unix", net.IPv4(127, 0, 0, 1))
+	if err != nil {
+		errors.ExitTlsError.Println("获取TLS配置失败: %s", err.Error())
+	}
 	unixListener, err = net.Listen("unix", unixFilePath)
 	if err != nil {
 		errors.ExitUnixSocketListener.Println("监听本地通信交互文件失败: %s", err.Error())
 	}
+	unixListener = gmtls.NewListener(unixListener, unixTlsConfig)
 	logs.Info("^_^ Local Server Run Success ^-^")
-
 	listenerHandle("本地服务", true, unixListener)
 
 }

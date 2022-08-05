@@ -36,6 +36,10 @@ const (
 	ExitSSHServerListener
 	// ExitSSHServerListenerExit ssh服务监听退出
 	ExitSSHServerListenerExit
+	// ExitCertError 证书相关错误
+	ExitCertError
+	// ExitTlsError tls错误
+	ExitTlsError
 )
 
 func (e ExitCode) Println(formatStr string, args ...any) {

@@ -4,8 +4,10 @@ import (
 	"fmt"
 	"github.com/byzk-project-deploy/main-server/config"
 	"github.com/byzk-project-deploy/main-server/errors"
+	"github.com/byzk-project-deploy/main-server/server"
 	logs "github.com/byzk-worker/go-common-logs"
 	"github.com/gliderlabs/ssh"
+	"github.com/tjfoc/gmsm/gmtls"
 	"net"
 	"os"
 	"path/filepath"
@@ -59,12 +61,17 @@ func listenerServer(config *config.Info) {
 func init() {
 
 	config.AddWatchAndNowExec(listenerServer)
+	unixTlsConfig, err := server.TlsManager.GetTlsServerConfig("BYPT LOCAL SERVER", "unix", net.IPv4(127, 0, 0, 1))
+	if err != nil {
+		errors.ExitTlsError.Println("获取TLS配置失败: %s", err.Error())
+	}
 
 	_ = os.RemoveAll(unixFilePath)
 	unixListener, err := net.Listen("unix", unixFilePath)
 	if err != nil {
 		errors.ExitSSHServerListener.Println("监听命令转发服务失败: " + err.Error())
 	}
+	unixListener = gmtls.NewListener(unixListener, unixTlsConfig)
 
 	go func() {
 		if err = ssh.Serve(unixListener, sshCmdCallHandle, authOption); err != nil {
