@@ -87,7 +87,7 @@ var (
 
 		cliRand := callOption.Rand
 
-		cId := sfnake.SFlake.GetIdStrUnwrap()
+		cId := sfnake.GetIdStrUnwrap()
 		passwd := passwd.Generator()
 		passwd = cId + "_" + passwd
 

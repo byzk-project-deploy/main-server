@@ -1,28 +1,43 @@
 package vos
 
-//
-//// DbPluginInfo 插件信息
-//type DbPluginInfo struct {
-//	// Id 主键
-//	Id string `json:"id,omitempty" gorm:"primary_key"`
-//	// Author 作者名称
-//	Author string
-//	// Name 名称
-//	Name string `json:"name,omitempty"`
-//	// ShortDesc 短描述
-//	ShortDesc string `json:"longDesc,omitempty"`
-//	// Desc 描述
-//	Desc string `json:"desc,omitempty"`
-//	// Icon 图标
-//	Icon string `json:"icon,omitempty"`
-//	// CreateTime 创建时间
-//	CreateTime time.Time
-//	// Type 插件类别
-//	Type rpcinterfaces.PluginType
-//	// Path 路径
-//	Path string `json:"-"`
-//	// Md5 md5值 Hex格式
-//	Md5 string `json:"md5,omitempty"`
-//	// Sha1 sha1值 Hex格式
-//	Sha1 string `json:"sha1,omitempty"`
-//}
+import (
+	"encoding/json"
+	"fmt"
+	"github.com/byzk-project-deploy/main-server/security"
+	serverclientcommon "github.com/byzk-project-deploy/server-client-common"
+)
+
+type ServerInfoContent []byte
+
+func NewServerInfoContent(serverInfo *serverclientcommon.ServerInfo) (ServerInfoContent, error) {
+	marshal, err := json.Marshal(serverInfo)
+	if err != nil {
+		return nil, fmt.Errorf("序列化服务器信息数据失败: %s", err.Error())
+	}
+
+	return security.Instance.DataEnvelope(marshal)
+}
+
+func (s ServerInfoContent) Unmarshal() (*serverclientcommon.ServerInfo, error) {
+	rawData, err := security.Instance.DataUnEnvelope(s)
+	if err != nil {
+		return nil, err
+	}
+
+	var res *serverclientcommon.ServerInfo
+	if err = json.Unmarshal(rawData, &res); err != nil {
+		return nil, fmt.Errorf("反序列化服务器数据失败")
+	}
+
+	return res, nil
+}
+
+// DbServerInfo 服务器信息
+type DbServerInfo struct {
+	// Id 主键标识
+	Id string `gorm:"primary_key"`
+	// Name 名称
+	Name string
+	// Content 内容存放
+	Content ServerInfoContent
+}

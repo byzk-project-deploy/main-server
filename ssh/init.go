@@ -4,7 +4,7 @@ import (
 	"fmt"
 	"github.com/byzk-project-deploy/main-server/config"
 	"github.com/byzk-project-deploy/main-server/errors"
-	"github.com/byzk-project-deploy/main-server/server"
+	"github.com/byzk-project-deploy/main-server/security"
 	logs "github.com/byzk-worker/go-common-logs"
 	"github.com/gliderlabs/ssh"
 	"github.com/tjfoc/gmsm/gmtls"
@@ -29,7 +29,7 @@ func listenerServer(config *config.Info) {
 	if !config.Listener.AllowRemoteControl {
 		if listener != nil {
 			_ = listener.Close()
-			logs.Info("远程控制服务已成功停止, 地址: %s", listenerAddr)
+			logs.Infof("远程控制服务已成功停止, 地址: %s", listenerAddr)
 		}
 		listenerAddr = ""
 		return
@@ -61,7 +61,7 @@ func listenerServer(config *config.Info) {
 func init() {
 
 	config.AddWatchAndNowExec(listenerServer)
-	unixTlsConfig, err := server.TlsManager.GetTlsServerConfig("BYPT LOCAL SERVER", "unix", net.IPv4(127, 0, 0, 1))
+	unixTlsConfig, err := security.Instance.GetTlsServerConfig("BYPT LOCAL SERVER", "unix", net.IPv4(127, 0, 0, 1))
 	if err != nil {
 		errors.ExitTlsError.Println("获取TLS配置失败: %s", err.Error())
 	}

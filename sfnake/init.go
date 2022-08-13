@@ -27,14 +27,22 @@ func NewSnowFlake() *SnowFlake {
 	}
 }
 
-func (s *SnowFlake) GetID() (uint64, error) {
-	return s.sFlake.NextID()
+func GetID() (uint64, error) {
+	return SFlake.sFlake.NextID()
 }
 
-func (s SnowFlake) GetIdStrUnwrap() string {
-	id, err := s.GetID()
+func GetIdStr() (string, error) {
+	id, err := GetID()
 	if err != nil {
-		panic(err.Error())
+		return "", err
 	}
-	return strconv.FormatUint(id, 10)
+	return strconv.FormatUint(id, 10), nil
+}
+
+func GetIdStrUnwrap() string {
+	str, err := GetIdStr()
+	if err != nil {
+		panic(err)
+	}
+	return str
 }

@@ -2,6 +2,7 @@ package server
 
 import (
 	"bufio"
+	"github.com/byzk-project-deploy/main-server/security"
 	transport_stream "github.com/go-base-lib/transport-stream"
 	"github.com/tjfoc/gmsm/gmtls"
 	"io"
@@ -47,6 +48,11 @@ func listenerServer(config *config.Info) {
 		_ = listener.Close()
 	}
 
+	tlsConfig, err := security.Instance.GetTlsServerConfig(security.GetRemoteServerName(net.ParseIP(config.Listener.Ip)), security.LinkRemoteDnsFlag, net.ParseIP(config.Listener.Ip))
+	if err != nil {
+		logs.Errorf("启动远程监听失败, 创建认证凭证失败: %s", err.Error())
+	}
+
 	tempListenerAddr := config.Listener.Ip + ":" + strconv.FormatUint(config.Listener.Port, 10)
 	if tempListenerAddr == listenerAddr {
 		return
@@ -61,6 +67,9 @@ func listenerServer(config *config.Info) {
 		logs.Errorf("启动远程监听失败: %s", err)
 		return
 	}
+
+	listener = gmtls.NewListener(listener, tlsConfig)
+
 	logs.Infof("Remote Control Server Run Success, Server Listener Address: %s", listenerAddr)
 	go listenerHandle("远程控制", false, listener)
 }
@@ -104,7 +113,7 @@ func Run() {
 	var err error
 
 	config.AddWatchAndNowExec(listenerServer)
-	unixTlsConfig, err := TlsManager.GetTlsServerConfig("BYPT LOCAL SERVER", "unix", net.IPv4(127, 0, 0, 1))
+	unixTlsConfig, err := security.Instance.GetTlsServerConfig(security.LinkLocalFlag, "unix", net.IPv4(127, 0, 0, 1))
 	if err != nil {
 		errors.ExitTlsError.Println("获取TLS配置失败: %s", err.Error())
 	}
@@ -115,5 +124,4 @@ func Run() {
 	unixListener = gmtls.NewListener(unixListener, unixTlsConfig)
 	logs.Info("^_^ Local Server Run Success ^-^")
 	listenerHandle("本地服务", true, unixListener)
-
 }

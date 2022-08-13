@@ -1,3 +1,5 @@
+//go:build hello
+
 package cmd
 
 import (
@@ -14,4 +16,8 @@ var helloCmdHandler serverclientcommon.CmdHandler = func(stream *transport_strea
 	}
 
 	return serverclientcommon.ExchangeData("World"), nil
+}
+
+func init() {
+	serverclientcommon.CmdHello.Registry(helloCmdHandler)
 }

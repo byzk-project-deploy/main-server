@@ -1,6 +1,8 @@
 package config
 
 import (
+	"github.com/pelletier/go-toml/v2"
+	"github.com/spf13/viper"
 	"os"
 	"path/filepath"
 
@@ -8,14 +10,21 @@ import (
 	"github.com/byzk-project-deploy/main-server/user"
 	logs "github.com/byzk-worker/go-common-logs"
 	"github.com/fsnotify/fsnotify"
-	"github.com/spf13/viper"
 )
 
 type WatchRunFn func(config *Info)
 
+const (
+	BYPTRootName          = ".bypt"
+	BYPTConfigFileName    = "config.toml"
+	BYPTServerProgramName = "byptServer"
+	BYPTClientProgramName = "bypt"
+	BYPTServerVersion     = "3.0.0"
+)
+
 var (
-	configDirPath  = filepath.Join(user.HomeDir(), ".bypt")
-	configFilePath = filepath.Join(configDirPath, "config.toml")
+	configDirPath  = filepath.Join(user.HomeDir(), BYPTRootName)
+	configFilePath = filepath.Join(configDirPath, BYPTConfigFileName)
 )
 
 var (
@@ -27,7 +36,32 @@ var (
 var (
 	configWatchRunList = make([]WatchRunFn, 0, 16)
 
-	currentConfig *Info
+	currentConfig = &Info{
+		Listener: &Listener{
+			AllowRemoteControl: false,
+			Ip:                 "127.0.0.1",
+			Port:               65526,
+		},
+		Database: &Database{
+			Path: databaseFilePath,
+		},
+		Logs: &LogConfig{
+			Path:  logDirPath,
+			Level: "info",
+		},
+		Shell: &ShellConfig{
+			Current:            "/usr/bin/sh",
+			Args:               "-c",
+			AllowShellListFile: "/etc/shells",
+			AllowShellList:     []string{},
+		},
+		Plugin: &PluginConfig{
+			StorePath: pluginStorePath,
+		},
+		Remote: &RemoteConfig{
+			InstallPath: "{{.homedir}}/.bypt/bin",
+		},
+	}
 )
 
 func Current() *Info {
@@ -38,17 +72,6 @@ func init() {
 	err := initOsAndArch()
 	viper.SetConfigFile(configFilePath)
 	viper.SetConfigType("toml")
-	viper.SetDefault("listener.allowRemoteControl", false)
-	viper.SetDefault("listener.ip", "127.0.0.1")
-	viper.SetDefault("listener.port", "65526")
-	viper.SetDefault("database.path", databaseFilePath)
-	viper.SetDefault("logs.level", "info")
-	viper.SetDefault("logs.path", logDirPath)
-	viper.SetDefault("shell.current", "/usr/bin/sh")
-	viper.SetDefault("shell.args", "-i -c")
-	viper.SetDefault("shell.allowShellListFile", "/etc/shells")
-	viper.SetDefault("shell.allowShellList", []string{})
-	viper.SetDefault("plugin.storePath", pluginStorePath)
 
 	stat, err := os.Stat(configFilePath)
 	if err != nil || stat.IsDir() {
@@ -56,7 +79,13 @@ func init() {
 			errors.ExitConfigFileCreatEmpty.Println("创建空的默认配置文件失败: %s", err.Error())
 		}
 
-		if err = viper.WriteConfigAs(configFilePath); err != nil {
+		var f *os.File
+		if f, err = os.OpenFile(configFilePath, os.O_CREATE|os.O_WRONLY, 0655); err != nil {
+			errors.ExitConfigFileCreatEmpty.Println("创建默认配置文件失败: %s", err.Error())
+		}
+		defer f.Close()
+
+		if err = toml.NewEncoder(f).Encode(currentConfig); err != nil {
 			errors.ExitConfigFileWriteToEmpty.Println("写出默认配置失败: %s", err.Error())
 		}
 	}

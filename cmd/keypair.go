@@ -3,7 +3,7 @@
 package cmd
 
 import (
-	"github.com/byzk-project-deploy/main-server/server"
+	"github.com/byzk-project-deploy/main-server/security"
 	serverclientcommon "github.com/byzk-project-deploy/server-client-common"
 	transport_stream "github.com/go-base-lib/transport-stream"
 	"net"
@@ -19,7 +19,7 @@ var (
 		}
 
 		var (
-			cert *server.CertResult
+			cert *security.CertResult
 			err  error
 		)
 
@@ -34,10 +34,10 @@ var (
 				return nil, serverclientcommon.ErrCodeValidation.New("插件名称不能为空")
 			}
 
-			cert, err = server.TlsManager.GeneratorClientPemCert(options.Author, options.Name+".bypt", net.IPv4(127, 0, 0, 1))
+			cert, err = security.Instance.GeneratorClientPemCert(options.Author, options.Name+".bypt", net.IPv4(127, 0, 0, 1))
 
 		case "client":
-			cert, err = server.TlsManager.GeneratorClientPemCert("BYPT LOCAL SERVER", "unix", net.IPv4(127, 0, 0, 1))
+			cert, err = security.Instance.GeneratorClientPemCert("BYPT LOCAL SERVER", "unix", net.IPv4(127, 0, 0, 1))
 		default:
 			return nil, serverclientcommon.ErrCodeValidation.Newf("非法的密钥类型: %s", t)
 		}
