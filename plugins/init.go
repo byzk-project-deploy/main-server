@@ -36,6 +36,6 @@ func getPluginInfoByPath(p string) (*rpcinterfaces.PluginInfo, error) {
 	return applicationPlugin.Info()
 }
 
-func init() {
+func Init() {
 	m.init()
 }

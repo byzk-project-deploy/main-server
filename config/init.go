@@ -68,7 +68,7 @@ func Current() *Info {
 	return currentConfig
 }
 
-func init() {
+func Init() {
 	err := initOsAndArch()
 	viper.SetConfigFile(configFilePath)
 	viper.SetConfigType("toml")

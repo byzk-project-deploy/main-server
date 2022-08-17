@@ -1,21 +1,17 @@
 package server
 
 import (
-	"bufio"
 	"fmt"
 	"github.com/akrennmair/slice"
 	"github.com/byzk-project-deploy/main-server/config"
 	"github.com/byzk-project-deploy/main-server/errors"
-	"github.com/byzk-project-deploy/main-server/security"
 	"github.com/byzk-project-deploy/main-server/ssh"
 	"github.com/byzk-project-deploy/main-server/vos"
 	serverclientcommon "github.com/byzk-project-deploy/server-client-common"
 	"github.com/byzk-worker/go-db-utils/sqlite"
-	transportstream "github.com/go-base-lib/transport-stream"
 	"github.com/jinzhu/gorm"
 	"github.com/pelletier/go-toml/v2"
 	"github.com/pkg/sftp"
-	"github.com/tjfoc/gmsm/gmtls"
 	"io"
 	"net"
 	"os"
@@ -25,97 +21,7 @@ import (
 	"time"
 )
 
-type remoteServerConn struct {
-	s     *serverclientcommon.ServerInfo
-	conn  net.Conn
-	err   error
-	bufRW *bufio.ReadWriter
-}
-
-func (r *remoteServerConn) ConnToStream() (*transportstream.Stream, error) {
-Start:
-	if r.err == nil {
-		return nil, r.err
-	}
-
-	if r.conn == nil {
-		r.err = r.Connection()
-		goto Start
-	}
-
-	stream := transportstream.NewStream(r.bufRW)
-
-	if _, err := serverclientcommon.CmdHello.Exchange(stream); err != nil {
-		if err == io.EOF {
-			r.Close()
-			goto Start
-		}
-		r.err = err
-		return nil, err
-	}
-
-	return stream, nil
-}
-
-func (r *remoteServerConn) UpdateServerInfo(s *serverclientcommon.ServerInfo) {
-	r.Close()
-	r.s = s
-}
-
-// Connection 连接远端服务，连接失败返回错误
-func (r *remoteServerConn) Connection() (err error) {
-	defer func() {
-		r.err = err
-	}()
-
-	serverInfo := r.s
-	if serverInfo.Status < serverclientcommon.ServerStatusNetworkErr {
-		return fmt.Errorf("当前服务的状态无法进行远程连接")
-	}
-
-	if serverInfo.IP == nil {
-		return fmt.Errorf("服务器IP地址不能为空")
-	}
-
-	if serverInfo.Port == 0 {
-		return fmt.Errorf("缺失端口信息")
-	}
-
-	r.Close()
-
-	tlsConfig, err := security.Instance.GetTlsClientConfig(security.GetRemoteServerName(serverInfo.IP), security.LinkRemoteDnsFlag, serverInfo.IP)
-	if err != nil {
-		return fmt.Errorf("创建连接凭据失败: %s", err.Error())
-	}
-
-	if r.conn, err = gmtls.Dial("tcp", fmt.Sprintf("%s:%d", serverInfo.IP.String(), serverInfo.Port), tlsConfig); err != nil {
-		r.conn = nil
-		return fmt.Errorf("%s", err.Error())
-	}
-	r.bufRW = bufio.NewReadWriter(bufio.NewReader(r.conn), bufio.NewWriter(r.conn))
-
-	return nil
-}
-
-// Close 关闭连接
-func (r *remoteServerConn) Close() {
-	r.err = nil
-	r.bufRW = nil
-	if r.conn != nil {
-		r.conn.Close()
-	}
-}
-
-// Error 返回当前连接中的异常信息
-func (r *remoteServerConn) Error() error {
-	return r.err
-}
-
-func newRemoteServerConn(s *serverclientcommon.ServerInfo) *remoteServerConn {
-	return &remoteServerConn{
-		s: s,
-	}
-}
+type RangeFileFn func(filename string, relativePath string, filesize int64, reader io.Reader) error
 
 var (
 	// remoteServerMap ip:server
@@ -128,7 +34,7 @@ var (
 	remoteServerList []*serverclientcommon.ServerInfo
 )
 
-func init() {
+func initManager() {
 	var dbServerInfoList []*vos.DbServerInfo
 	if err := sqlite.Db().Model(&vos.DbServerInfo{}).Find(&dbServerInfoList).Error; err != nil && err != gorm.ErrRecordNotFound {
 		errors.ExitDatabaseQuery.Println("查询服务器信息失败, 请检查数据库相关配置: %s", err.Error())
@@ -140,6 +46,7 @@ func init() {
 	remoteServerConnMap = make(map[string]*remoteServerConn, dbLen)
 	remoteAliasMap = make(map[string]*serverclientcommon.ServerInfo, dbLen)
 
+	w := &sync.WaitGroup{}
 	for i := range dbServerInfoList {
 		dbServerInfo := dbServerInfoList[i]
 		serverInfo, err := dbServerInfo.Content.Unmarshal()
@@ -147,6 +54,25 @@ func init() {
 			errors.ExitDatabaseQuery.Println("服务器数据解密失败, 数据可能已被篡改, 请检查相关数据项: %s", err.Error())
 		}
 
+		if serverInfo.Status == serverclientcommon.ServerRunning {
+			serverInfo.Status = serverclientcommon.ServerStatusNoRun
+		}
+
+		remoteServerConnMap[serverInfo.Id] = newRemoteServerConn(serverInfo)
+		if serverInfo.Status >= serverclientcommon.ServerStatusNetworkErr {
+			w.Add(1)
+			go func(s *serverclientcommon.ServerInfo) {
+				if err = remoteServerConnMap[s.Id].Ping(); err == nil {
+					s.Status = serverclientcommon.ServerRunning
+					s.EndMsg = ""
+				} else {
+					s.Status = serverclientcommon.ServerStatusNetworkErr
+					s.EndMsg = err.Error()
+				}
+				w.Done()
+			}(serverInfo)
+
+		}
 		remoteServerList = append(remoteServerList, serverInfo)
 
 		serverInfo.Id = dbServerInfo.Id
@@ -161,9 +87,8 @@ func init() {
 			remoteAliasMap[alias] = serverInfo
 		}
 
-		remoteServerConnMap[serverInfo.Id] = newRemoteServerConn(serverInfo)
 	}
-
+	w.Wait()
 }
 
 var Manager = &manager{
@@ -247,12 +172,14 @@ func (m *manager) updateServerInfoToStore(serverInfo *serverclientcommon.ServerI
 
 	remoteServerConnMap[serverInfo.Id].UpdateServerInfo(serverInfo)
 	if serverInfo.Status >= serverclientcommon.ServerStatusNetworkErr {
-		remoteConnErr := remoteServerConnMap[serverInfo.Id].Connection()
-		if remoteConnErr != nil {
-			serverInfo.Status = serverclientcommon.ServerStatusNetworkErr
-			serverInfo.EndMsg = remoteConnErr.Error()
+		remoteServerConnMap[serverInfo.Id].Reconnection()
+		err = remoteServerConnMap[serverInfo.Id].Ping()
+		if err != nil {
+			serverInfo.Status = serverclientcommon.ServerStatusNoRun
+			serverInfo.EndMsg = err.Error()
 		} else {
 			serverInfo.Status = serverclientcommon.ServerRunning
+			serverInfo.EndMsg = ""
 		}
 	}
 
@@ -278,7 +205,7 @@ func (m *manager) updateServerInfoToStore(serverInfo *serverclientcommon.ServerI
 	remoteServerMap[serverInfo.Id] = serverInfo
 	remoteServerList[nowServerIndex] = serverInfo
 
-	return nil
+	return
 }
 
 func (m *manager) clearAliasByIp(ip string) error {
@@ -300,6 +227,102 @@ func (m *manager) clearAliasByIp(ip string) error {
 		delete(remoteAliasMap, alias)
 	}
 	return nil
+}
+
+func (m *manager) GetServerFtp(serverInfo *serverclientcommon.ServerInfo) (*ssh.SSHSftpWrapper, error) {
+	if m.lock.TryLock() {
+		defer m.lock.Unlock()
+	}
+	cli, err := ssh.NewRemote(serverInfo.Id, serverInfo.SSHPort, serverInfo.SSHUser, serverInfo.SSHPassword)
+	if err != nil {
+		return nil, fmt.Errorf("连接服务器[%s]失败: %s", serverInfo.Id, err.Error())
+	}
+
+	wrapper, err := cli.FtpWrapper()
+	if err != nil {
+		cli.Close()
+		return nil, err
+	}
+
+	return wrapper, nil
+}
+
+func (m *manager) repair(s *serverclientcommon.ServerInfo) (res *serverclientcommon.RemoteServerRepairResInfo) {
+	var (
+		err error
+
+		port   int
+		status serverclientcommon.ServerStatus
+	)
+
+	serverConn := remoteServerConnMap[s.Id]
+
+	res = &serverclientcommon.RemoteServerRepairResInfo{
+		Ip:      s.Id,
+		Success: true,
+	}
+	defer func() {
+		if err != nil {
+			res.Success = false
+			res.ErrMsg = err.Error()
+			return
+		}
+	}()
+
+	if s.Status == serverclientcommon.ServerRunning {
+		if err = serverConn.Ping(); err == nil {
+			return
+		}
+	}
+
+	if port, status, err = m.CheckRemoteServer(s.IP, s.SSHPort, s.SSHUser, s.SSHPassword); err != nil {
+		return
+	}
+
+	if status == serverclientcommon.ServerStatusNeedInstall {
+		err = fmt.Errorf("bypt主程序未安装, 暂不支持自动安装，请前往服务器中手动安装之后再尝试手动修复")
+		return
+	}
+
+	s.Port = port
+	s.Status = status
+	if status >= serverclientcommon.ServerStatusNetworkErr {
+		if err = m.updateServerInfoToStore(s); err != nil {
+			s.Status = serverclientcommon.ServerStatusNetworkErr
+		} else if s.EndMsg != "" {
+			err = fmt.Errorf(s.EndMsg)
+			s.Status = serverclientcommon.ServerStatusNetworkErr
+		}
+	}
+
+	return
+}
+
+func (m *manager) Repair() (res []*serverclientcommon.RemoteServerRepairResInfo) {
+	m.lock.Lock()
+	defer m.lock.Unlock()
+
+	serverListLen := len(remoteServerMap)
+	if serverListLen == 0 {
+		return nil
+	}
+
+	res = make([]*serverclientcommon.RemoteServerRepairResInfo, 0, serverListLen)
+
+	w := &sync.WaitGroup{}
+
+	for k := range remoteServerMap {
+		serverInfo := remoteServerMap[k]
+		w.Add(1)
+		go func() {
+			defer w.Done()
+			res = append(res, m.repair(serverInfo))
+		}()
+	}
+
+	w.Wait()
+
+	return
 }
 
 func (m *manager) SettingAlias(aliasList []string, ip string) error {
@@ -497,160 +520,80 @@ func (m *manager) CheckRemoteServer(ip net.IP, sshPort uint16, username, passwor
 	return
 }
 
-//func Add(serverInfo *serverclientcommon.ServerInfo) error {
-//	if serverInfo.IP == nil {
-//		return fmt.Errorf("服务器IP不能为空")
-//	}
-//
-//	ipStr := serverInfo.IP.String()
-//	if remoteServerMap[ipStr] != nil {
-//		return fmt.Errorf("服务器已经存在，请勿重新添加")
-//	}
-//
-//	if serverInfo.Port <= 0 {
-//		return fmt.Errorf("服务器端口不能为空")
-//	}
-//
-//	certRes, err := security.Instance.GeneratorClientPemCert(security.GetRemoteServerName(serverInfo.IP), security.LinkRemoteDnsFlag, serverInfo.IP)
-//	if err != nil {
-//		return fmt.Errorf("服务器证书生成失败: %s", certRes)
-//	}
-//	serverInfo.ClientCertPem = certRes.CertPem
-//	serverInfo.ClientPrivatePem = certRes.PrivateKeyPem
-//	serverInfo.JoinTime = time.Now()
-//
-//	idStr, err := sfnake.GetIdStr()
-//	if err != nil {
-//		return fmt.Errorf("获取ID失败: %s", err.Error())
-//	}
-//
-//	content, err := vos.NewServerInfoContent(serverInfo)
-//	if err != nil {
-//		return fmt.Errorf("序列化服务器信息失败: %s", err.Error())
-//	}
-//
-//	return sqlite.Db().Transaction(func(tx *gorm.DB) error {
-//		dbServerInfoModel := tx.Model(&vos.DbServerInfo{})
-//
-//		count := 0
-//		if err = dbServerInfoModel.Where(&vos.DbServerInfo{
-//			Name: ipStr,
-//		}).Count(&count).Error; err != nil {
-//			return fmt.Errorf("查询服务器数量失败: %s", err.Error())
-//		}
-//
-//		if count > 0 {
-//			return fmt.Errorf("服务器已存在")
-//		}
-//
-//		saveServerInfo := &vos.DbServerInfo{
-//			Id:      idStr,
-//			Name:    ipStr,
-//			Content: content,
-//		}
-//
-//		if err = dbServerInfoModel.Save(&saveServerInfo).Error; err != nil {
-//			return fmt.Errorf("保存服务器信息失败: %s", err.Error())
-//		}
-//
-//		if serverPort, err := checkAndInstallBypt(ipStr, serverInfo.SSHPort, serverInfo.SSHUser, serverInfo.SSHPassword); err != nil {
-//			return err
-//		} else if serverPort != serverInfo.Port {
-//			serverInfo.Port = serverPort
-//			content, err = vos.NewServerInfoContent(serverInfo)
-//			if err != nil {
-//				return fmt.Errorf("序列化服务器信息失败: %s", err.Error())
-//			}
-//			saveServerInfo.Content = content
-//			if err = dbServerInfoModel.Update(&saveServerInfo).Error; err != nil {
-//				return fmt.Errorf("更新服务器端口信息失败: %s", err.Error())
-//			}
-//		}
-//		return nil
-//	})
-//}
+func (m *manager) ReadFileInfo(serverName string, path string, t serverclientcommon.UploadType) (os.FileInfo, error) {
+	m.lock.Lock()
+	defer m.lock.Unlock()
 
-//func checkAndInstallBypt(ip string, port int, username, password string) (p int, err error) {
-//	var (
-//		byptServerConfigBytes []byte
-//		buf                   *bytes.Buffer
-//	)
-//
-//	remoteCmd, err := ssh.NewRemote(ip, port, username, password)
-//	if err != nil {
-//		return 0, err
-//	}
-//
-//	ftp, err := remoteCmd.Ftp()
-//	if err != nil {
-//		return 0, err
-//	}
-//	defer ftp.Close()
-//
-//	pwdPath, err := ftp.Getwd()
-//	if err != nil {
-//		return 0, fmt.Errorf("获取服务器[%s]当前目录失败: %s", ip, err.Error())
-//	}
-//
-//	tmlData := map[string]any{"homedir": pwdPath, "ip": ip}
-//
-//	remoteByptDir := filepath.Join(pwdPath, ".bypt")
-//	remoteConfigPath := filepath.Join(remoteByptDir, "config.toml")
-//	remoteConfigFile, err := ftp.Open(remoteConfigPath)
-//	if err == nil {
-//		goto Success
-//	}
-//	defer func() {
-//		if err != nil {
-//			_ = ftp.Remove(remoteConfigPath)
-//			_ = ftp.RemoveDirectory(remoteByptDir)
-//		}
-//	}()
-//	defer remoteConfigFile.Close()
-//
-//	_ = ftp.MkdirAll(remoteByptDir)
-//	if remoteConfigFile, err = ftp.Create(remoteConfigPath); err != nil {
-//		return 0, fmt.Errorf("在远程服务器[%s]中创建配置文件失败: %s", ip, err.Error())
-//	}
-//
-//	if buf, err = execTemplateToBuf(remoteConfigTml, tmlData); err != nil {
-//		return 0, fmt.Errorf("生成服务器[%s]对应的配置失败: %s", ip, err.Error())
-//	}
-//
-//	if _, err = io.Copy(remoteConfigFile, buf); err != nil {
-//		return 0, fmt.Errorf("配置文件上传失败: %s", err.Error())
-//	}
-//
-//	if _, err = remoteConfigFile.Seek(0, 0); err != nil {
-//		return 0, fmt.Errorf("移动文件指针失败: %s", err.Error())
-//	}
-//
-//Success:
-//	byptServerConfigBytes, err = io.ReadAll(remoteConfigFile)
-//	if err != nil {
-//		return 0, fmt.Errorf("读取服务器[%s]配置失败: %s", ip, err.Error())
-//	}
-//
-//	v := viper.New()
-//	v.SetConfigType("toml")
-//	if err = v.ReadConfig(bytes.NewReader(byptServerConfigBytes)); err != nil {
-//		return 0, fmt.Errorf("解析远端服务配置失败, 请检查服务器[%s]上的配置文件内容", ip)
-//	}
-//
-//	remoteAllowControl := v.GetBool("listener.allowRemoteControl")
-//	if !remoteAllowControl {
-//		return 0, fmt.Errorf("远程服务[%s]不允许进行控制", ip)
-//	}
-//
-//	remotePortStr := v.GetString("listener.port")
-//	if remotePortStr == "" {
-//		return 0, fmt.Errorf("远程服务[%s]没有正在监听的端口，请检查相关配置", ip)
-//	}
-//
-//	remotePort, err := strconv.Atoi(remotePortStr)
-//	if err != nil {
-//		return 0, fmt.Errorf("转换远程服务[%s]监听端口失败, 请检查服务器内的配置", ip)
-//	}
-//
-//	return remotePort, nil
-//}
+	serverInfo, err := m.FindByServerName(serverName)
+	if err != nil {
+		return nil, err
+	}
+
+	switch t {
+	case serverclientcommon.UploadTypeSSHFtp:
+		serverFtp, err := m.GetServerFtp(serverInfo)
+		if err != nil {
+			return nil, err
+		}
+		defer serverFtp.Close()
+
+		path = serverFtp.PathReplace(path)
+		stat, err := serverFtp.Stat(path)
+		if err != nil {
+			return nil, fmt.Errorf("打开服务器[%s]中的[%s]路径失败: %s", serverInfo.Id, path, err.Error())
+		}
+
+		return stat, nil
+	default:
+		return nil, fmt.Errorf("无法匹配的协议类型")
+	}
+
+}
+
+func (m *manager) rangeFileWithSSHSftp(ftpWrapper *ssh.SSHSftpWrapper, path string, relativePath string, fn RangeFileFn) error {
+	stat, err := ftpWrapper.Stat(path)
+	if err != nil {
+		return fmt.Errorf("获取路径[%s]的文件信息失败: %s", path, err.Error())
+	}
+
+	if stat.IsDir() {
+		dirChildren, err := ftpWrapper.ReadDir(path)
+		if err != nil {
+			return fmt.Errorf("获取目录[%s]的子文件失败: %s", path, err.Error())
+		}
+		for i := range dirChildren {
+			child := dirChildren[i]
+			if err = m.rangeFileWithSSHSftp(ftpWrapper, filepath.Join(path, child.Name()), filepath.Join(relativePath, child.Name()), fn); err != nil {
+				return err
+			}
+		}
+		return nil
+	}
+
+	f, err := ftpWrapper.OpenFile(path, os.O_RDONLY)
+	if err != nil {
+		return fmt.Errorf("打开文件[%s]失败: %s", path, err.Error())
+	}
+	defer f.Close()
+	return fn(f.Name(), relativePath, stat.Size(), f)
+}
+
+func (m *manager) RangeFile(serverName string, path string, t serverclientcommon.UploadType, fn RangeFileFn) error {
+	serverInfo, err := m.FindByServerName(serverName)
+	if err != nil {
+		return err
+	}
+
+	switch t {
+	case serverclientcommon.UploadTypeSSHFtp:
+		ftpWrapper, err := m.GetServerFtp(serverInfo)
+		if err != nil {
+			return err
+		}
+		defer ftpWrapper.Close()
+		path = ftpWrapper.PathReplace(path)
+		return m.rangeFileWithSSHSftp(ftpWrapper, path, "", fn)
+	default:
+		return fmt.Errorf("无法匹配的协议类型")
+	}
+}

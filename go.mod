@@ -6,7 +6,7 @@ require (
 	github.com/byzk-project-deploy/base-interface v0.0.0-20220804063912-57ae365061b1
 	github.com/byzk-project-deploy/go-plugin v0.0.0-20220804063707-b9a65653fc49
 	github.com/byzk-project-deploy/packaging-plugin v0.0.0-20220804064426-932ca0bc7515
-	github.com/byzk-project-deploy/server-client-common v0.0.0-20220812093640-905f25ea3357
+	github.com/byzk-project-deploy/server-client-common v0.0.0-20220817060510-d86655aea570
 	github.com/byzk-worker/go-common-logs v0.0.0-20220706092046-61e325f0c65c
 	github.com/byzk-worker/go-db-utils v0.0.0-20220706170431-c3faa2b05109
 	github.com/creack/pty v1.1.18

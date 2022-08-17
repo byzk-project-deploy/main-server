@@ -15,7 +15,7 @@ var (
 	level logrus.Level
 )
 
-func init() {
+func Init() {
 	config.AddWatchAndNowExec(configChange)
 }
 

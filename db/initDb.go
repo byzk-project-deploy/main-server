@@ -15,7 +15,7 @@ import (
 
 var dbFile string
 
-func init() {
+func Init() {
 	config.AddWatchAndNowExec(configWatch)
 }
 

@@ -110,6 +110,9 @@ func connHandle(conn net.Conn) {
 }
 
 func Run() {
+
+	initManager()
+
 	var err error
 
 	config.AddWatchAndNowExec(listenerServer)

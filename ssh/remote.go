@@ -5,6 +5,7 @@ import (
 	"github.com/pkg/sftp"
 	"golang.org/x/crypto/ssh"
 	"net"
+	"time"
 )
 
 type Remote struct {
@@ -13,7 +14,8 @@ type Remote struct {
 
 func NewRemote(ip string, port uint16, username, password string) (*Remote, error) {
 	config := &ssh.ClientConfig{
-		User: username,
+		User:    username,
+		Timeout: 5 * time.Second,
 		Auth: []ssh.AuthMethod{
 			ssh.Password(password),
 		},
@@ -46,6 +48,21 @@ func (r *Remote) Exec(command string) ([]byte, error) {
 
 func (r *Remote) Ftp() (*sftp.Client, error) {
 	return sftp.NewClient(r.client)
+}
+
+func (r *Remote) FtpWrapper() (*SSHSftpWrapper, error) {
+	ftp, err := r.Ftp()
+	if err != nil {
+		return nil, err
+	}
+
+	ftpWrapper, err := NewSSHSftpWrapper(ftp)
+	if err != nil {
+		return nil, err
+	}
+
+	ftpWrapper.s = r.client
+	return ftpWrapper, nil
 }
 
 func (r *Remote) Close() {

@@ -2,7 +2,7 @@ package cmd
 
 import serverclientcommon "github.com/byzk-project-deploy/server-client-common"
 
-func init() {
+func Init() {
 	serverclientcommon.CmdSystemCall.Registry(systemCallHandle)
 	serverclientcommon.CmdSystemShellList.Registry(stemShellListHandle)
 	serverclientcommon.CmdSystemDirPath.Registry(systemDirPathVerifyHandle)
@@ -18,4 +18,6 @@ func init() {
 	serverclientcommon.CmdRemoteServerUpdate.Registry(remoteServerUpdate)
 	serverclientcommon.CmdRemoteServerUpdateAlias.Registry(remoteServerAliasUpdate)
 	serverclientcommon.CmdRemoteServerDel.Registry(remoteServerRemove)
+	serverclientcommon.CmdRemoteServerRepair.Registry(remoteServerRepair)
+	serverclientcommon.CmdRemoteServerFileUpload.Registry(remoteServerUpload)
 }

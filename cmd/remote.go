@@ -1,12 +1,18 @@
 package cmd
 
 import (
+	"fmt"
 	"github.com/byzk-project-deploy/main-server/server"
+	"github.com/byzk-project-deploy/main-server/ssh"
 	"github.com/byzk-project-deploy/main-server/vos"
 	serverclientcommon "github.com/byzk-project-deploy/server-client-common"
 	"github.com/byzk-worker/go-db-utils/sqlite"
 	transportstream "github.com/go-base-lib/transport-stream"
+	"io"
+	"math"
 	"net"
+	"os"
+	"path/filepath"
 )
 
 var (
@@ -152,4 +158,184 @@ var (
 
 		return nil, server.Manager.RemoveServer(serverName)
 	}
+
+	// remoteServerRepair 远程服务自动修复
+	remoteServerRepair serverclientcommon.CmdHandler = func(stream *transportstream.Stream, conn net.Conn) (serverclientcommon.ExchangeData, error) {
+		return serverclientcommon.NewExchangeDataByJson(server.Manager.Repair())
+	}
+
+	// remoteServerUpload 文件上传
+	remoteServerUpload serverclientcommon.CmdHandler = func(stream *transportstream.Stream, conn net.Conn) (serverclientcommon.ExchangeData, error) {
+		var uploadReqData *serverclientcommon.RemoteServerUploadRequest
+		if err := stream.ReceiveJsonMsg(&uploadReqData); err != nil {
+			return nil, serverclientcommon.ErrCodeValidation.Newf("获取上传信息失败: %s", err.Error())
+		}
+
+		sourceAddr := uploadReqData.SourceAddr
+		if sourceAddr.Path == "" {
+			return nil, serverclientcommon.ErrCodeValidation.New("源文件地址不能为空")
+		}
+
+		var (
+			stat os.FileInfo
+			err  error
+		)
+		if sourceAddr.Server != "" {
+			if stat, err = server.Manager.ReadFileInfo(sourceAddr.Server, sourceAddr.Path, uploadReqData.UploadType); err != nil {
+				return nil, err
+			}
+		} else {
+			if stat, err = os.Stat(sourceAddr.Path); err != nil {
+				return nil, serverclientcommon.ErrCodeValidation.Newf("打开本地路径[%s]失败: %s", sourceAddr.Path, err.Error())
+			}
+		}
+
+		if stat.IsDir() && !uploadReqData.Recursive {
+			return nil, fmt.Errorf("不允许上传目录")
+		}
+
+		if err = stream.WriteMsg(nil, transportstream.MsgFlagSuccess); err != nil {
+			return nil, err
+		}
+
+		if _, err = stream.ReceiveMsg(); err != nil {
+			return nil, err
+		}
+
+		uploadFn, err := remoteUploadToServer(uploadReqData.TargetAddrList, stream)
+		if err != nil {
+			return nil, err
+		}
+
+		if sourceAddr.Server != "" {
+			err = server.Manager.RangeFile(sourceAddr.Server, sourceAddr.Path, uploadReqData.UploadType, uploadFn)
+		} else {
+			err = remoteUploadRangeLocalFile(sourceAddr.Path, "", uploadFn)
+		}
+
+		return nil, err
+	}
 )
+
+func remoteUploadRangeLocalFile(path, relativePath string, fn server.RangeFileFn) error {
+	stat, err := os.Stat(path)
+	if err != nil {
+		return fmt.Errorf("获取本地路径[%s]的文件信息失败: %s", path, err.Error())
+	}
+
+	if stat.IsDir() {
+		dirChild, err := os.ReadDir(path)
+		if err != nil {
+			return fmt.Errorf("获取本地目录[%s]中的子文件信息失败: %s", path, err.Error())
+		}
+		for i := range dirChild {
+			child := dirChild[i]
+			if err = remoteUploadRangeLocalFile(filepath.Join(path, child.Name()), filepath.Join(relativePath, child.Name()), fn); err != nil {
+				return err
+			}
+		}
+		return nil
+	}
+
+	f, err := os.OpenFile(path, os.O_RDONLY, 0655)
+	if err != nil {
+		return fmt.Errorf("打开文件[%s]失败: %s", path, err.Error())
+	}
+	defer f.Close()
+	return fn(f.Name(), relativePath, stat.Size(), f)
+}
+
+func remoteUploadToServer(serverAddrList []*serverclientcommon.UploadAddrInfo, stream *transportstream.Stream) (server.RangeFileFn, error) {
+	serverFtpList := make([]*ssh.SSHSftpWrapper, 0, len(serverAddrList))
+	for i := range serverAddrList {
+		addr := serverAddrList[i]
+		serverInfo, err := server.Manager.FindByServerName(addr.Server)
+		if err != nil {
+			return nil, err
+		}
+		ftpWrapper, err := server.Manager.GetServerFtp(serverInfo)
+		if err != nil {
+			return nil, err
+		}
+		addr.Path = ftpWrapper.PathReplace(addr.Path)
+		serverFtpList = append(serverFtpList, ftpWrapper)
+	}
+	return func(filename, relativePath string, filesize int64, reader io.Reader) error {
+		if err := stream.WriteMsg([]byte(filename), transportstream.MsgFlagSuccess); err != nil {
+			return err
+		}
+
+		if _, err := stream.ReceiveMsg(); err != nil {
+			return err
+		}
+
+		writerList := make([]io.WriteCloser, 0, len(serverFtpList))
+		defer func() {
+			for i := range writerList {
+				writerList[i].Close()
+			}
+		}()
+		for i := range serverFtpList {
+			sftpWrapper := serverFtpList[i]
+			if relativePath != "" {
+				_ = sftpWrapper.MkdirAll(filepath.Join(serverAddrList[i].Path, filepath.Dir(relativePath)))
+			} else {
+				_ = sftpWrapper.MkdirAll(filepath.Dir(serverAddrList[i].Path))
+			}
+			f, err := sftpWrapper.OpenFile(filepath.Join(serverAddrList[i].Path, relativePath), os.O_WRONLY|os.O_CREATE)
+			if err != nil {
+				return fmt.Errorf("服务器[%s]创建文件[%s]失败, 上传终止, 错误原因: %s", serverAddrList[i].Server, filepath.Join(serverAddrList[i].Path, relativePath), err.Error())
+			}
+			writerList = append(writerList, f)
+		}
+
+		okCount := 0.0
+		buf := make([]byte, 1024*1024*5)
+		for {
+			n, err := reader.Read(buf)
+			if err == io.EOF {
+				if n > 0 {
+					goto Write
+				}
+				stream.WriteJsonMsg(&serverclientcommon.RemoteServerUploadResponse{
+					Success:  true,
+					Progress: 100,
+					End:      true,
+				})
+				return nil
+			}
+
+			if err != nil {
+				return fmt.Errorf("读取文件[%s]内容失败: %s", filename, err.Error())
+			}
+
+		Write:
+			for i := len(writerList) - 1; i >= 0; i-- {
+				writer := writerList[i]
+				if _, err = writer.Write(buf[:n]); err != nil {
+					writer.Close()
+					writerList = append(writerList[:i], writerList[i+1:]...)
+					serverAddrInfo := serverAddrList[i]
+					serverAddrList = append(serverAddrList[:i], serverAddrList[i+1:]...)
+					if err = stream.WriteJsonMsg(&serverclientcommon.RemoteServerUploadResponse{
+						Success:  false,
+						ServerIp: serverAddrInfo.Server,
+						ErrMsg:   fmt.Sprintf("向服务器[%s]上传文件[%s]失败, 错误原因: %s", serverAddrInfo.Server, filename, err.Error()),
+					}); err != nil {
+						return err
+					}
+				}
+			}
+
+			okCount += float64(n)
+
+			if err = stream.WriteJsonMsg(&serverclientcommon.RemoteServerUploadResponse{
+				Success:  true,
+				Progress: int(math.Floor(okCount / float64(filesize) * 100)),
+			}); err != nil {
+				return err
+			}
+
+		}
+	}, nil
+}
