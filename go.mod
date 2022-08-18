@@ -6,7 +6,7 @@ require (
 	github.com/byzk-project-deploy/base-interface v0.0.0-20220804063912-57ae365061b1
 	github.com/byzk-project-deploy/go-plugin v0.0.0-20220804063707-b9a65653fc49
 	github.com/byzk-project-deploy/packaging-plugin v0.0.0-20220804064426-932ca0bc7515
-	github.com/byzk-project-deploy/server-client-common v0.0.0-20220817060510-d86655aea570
+	github.com/byzk-project-deploy/server-client-common v0.0.0-20220817085252-a2f79566a83d
 	github.com/byzk-worker/go-common-logs v0.0.0-20220706092046-61e325f0c65c
 	github.com/byzk-worker/go-db-utils v0.0.0-20220706170431-c3faa2b05109
 	github.com/creack/pty v1.1.18
@@ -14,7 +14,7 @@ require (
 	github.com/gliderlabs/ssh v0.3.4
 	github.com/go-base-lib/cacenter v0.0.0-20220802134124-0b5a89a090af
 	github.com/go-base-lib/coderutils v0.0.0-20220728101957-faf9884c898b
-	github.com/go-base-lib/transport-stream v0.0.0-20220811074642-ab12339bdc21
+	github.com/go-base-lib/transport-stream v0.0.0-20220817085119-03136fb70ffd
 	github.com/iancoleman/orderedmap v0.2.0
 	github.com/jinzhu/gorm v1.9.16
 	github.com/m1/go-generate-password v0.2.0

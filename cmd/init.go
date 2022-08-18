@@ -20,4 +20,5 @@ func Init() {
 	serverclientcommon.CmdRemoteServerDel.Registry(remoteServerRemove)
 	serverclientcommon.CmdRemoteServerRepair.Registry(remoteServerRepair)
 	serverclientcommon.CmdRemoteServerFileUpload.Registry(remoteServerUpload)
+	serverclientcommon.CmdRemoteServerFileDownload.Registry(remoteServerDownload)
 }

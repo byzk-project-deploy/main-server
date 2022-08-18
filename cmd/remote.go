@@ -13,6 +13,7 @@ import (
 	"net"
 	"os"
 	"path/filepath"
+	"strings"
 )
 
 var (
@@ -214,6 +215,68 @@ var (
 		}
 
 		return nil, err
+	}
+
+	// remoteServerDownload 远程服务文件下载
+	remoteServerDownload serverclientcommon.CmdHandler = func(stream *transportstream.Stream, conn net.Conn) (serverclientcommon.ExchangeData, error) {
+		tBytes, err := stream.ReceiveMsg()
+		if err != nil {
+			return nil, err
+		}
+
+		_t, err := transportstream.BytesToInt[uint8](tBytes)
+		t := serverclientcommon.UploadType(_t)
+
+		if t > serverclientcommon.UploadUnknown || t < 0 {
+			return nil, fmt.Errorf("不支持的文件传输方式")
+		}
+
+		remoteAddrStr, err := stream.ReceiveMsg()
+		if err != nil {
+			return nil, err
+		}
+
+		remoteAddrFlags := strings.Split(string(remoteAddrStr), "@")
+		if len(remoteAddrFlags) != 2 {
+			return nil, fmt.Errorf("地址[%s]格式不正确", remoteAddrStr)
+		}
+
+		return nil, server.Manager.RangeFile(remoteAddrFlags[0], remoteAddrFlags[1], t, func(filename string, relativePath string, filesize int64, reader io.Reader) error {
+			if filesizeBytes, err := transportstream.IntToBytes(filesize); err != nil {
+				return err
+			} else {
+				if err := stream.WriteMsgStream([]byte(filename), transportstream.MsgFlagSuccess).
+					WriteMsgStream([]byte(relativePath), transportstream.MsgFlagSuccess).
+					WriteMsgStream(filesizeBytes, transportstream.MsgFlagSuccess).Error(); err != nil {
+					return err
+				}
+			}
+
+			if _, err := stream.ReceiveMsg(); err != nil {
+				return err
+			}
+
+			buf := make([]byte, 1024*1024*5)
+			for {
+				n, err := reader.Read(buf)
+				if err == io.EOF {
+					if n > 0 {
+						goto Write
+					}
+					return nil
+				}
+
+				if err != nil {
+					return err
+				}
+
+			Write:
+				if err = stream.WriteMsg(buf[:n], transportstream.MsgFlagSuccess); err != nil {
+					return err
+				}
+
+			}
+		})
 	}
 )
 
