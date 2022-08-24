@@ -3,10 +3,10 @@ module github.com/byzk-project-deploy/main-server
 go 1.18
 
 require (
-	github.com/byzk-project-deploy/base-interface v0.0.0-20220804063912-57ae365061b1
+	github.com/byzk-project-deploy/base-interface v0.0.0-20220824015721-650927c5dd30
 	github.com/byzk-project-deploy/go-plugin v0.0.0-20220804063707-b9a65653fc49
-	github.com/byzk-project-deploy/packaging-plugin v0.0.0-20220804064426-932ca0bc7515
-	github.com/byzk-project-deploy/server-client-common v0.0.0-20220817085252-a2f79566a83d
+	github.com/byzk-project-deploy/packaging-plugin v0.0.0-20220822065851-86abe3085b7e
+	github.com/byzk-project-deploy/server-client-common v0.0.0-20220824075115-b6bc9575ce99
 	github.com/byzk-worker/go-common-logs v0.0.0-20220706092046-61e325f0c65c
 	github.com/byzk-worker/go-db-utils v0.0.0-20220706170431-c3faa2b05109
 	github.com/creack/pty v1.1.18
@@ -27,6 +27,7 @@ require (
 
 require (
 	github.com/akrennmair/slice v0.0.0-20220105203817-49445747ab81
+	github.com/hashicorp/go-hclog v1.2.0
 	github.com/pelletier/go-toml/v2 v2.0.2
 	github.com/pkg/sftp v1.13.5
 	github.com/spf13/viper v1.12.0
@@ -47,7 +48,6 @@ require (
 	github.com/golang/protobuf v1.5.2 // indirect
 	github.com/gosuri/uitable v0.0.4 // indirect
 	github.com/hashicorp/errwrap v1.1.0 // indirect
-	github.com/hashicorp/go-hclog v1.2.0 // indirect
 	github.com/hashicorp/go-multierror v1.1.0 // indirect
 	github.com/hashicorp/hcl v1.0.0 // indirect
 	github.com/hashicorp/yamux v0.0.0-20180604194846-3520598351bb // indirect

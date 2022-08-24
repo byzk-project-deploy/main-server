@@ -24,8 +24,8 @@ var m = &manager{
 }
 
 type manager struct {
-	lock sync.Locker
-	// startPluginMap 启动成功的插件
+	lock *sync.Mutex
+	// startPluginMap 已加载的插件集合
 	pluginMap *orderedmap.OrderedMap
 }
 
@@ -45,15 +45,109 @@ func (m *manager) init() {
 	for i := range pluginInfoList {
 		pluginInfo := pluginInfoList[i]
 
-		pluginStatusInfo := &serverclientcommon.PluginStatusInfo{
-			DbPluginInfo: pluginInfo,
+		logger, err := NewLogger(pluginInfo)
+		if err != nil {
+			errors.ExitLogDirCreate.Println("创建插件日志库失败: %s", err.Error())
+		}
+		pluginStatusInfo := &PluginStatusExtend{
+			PluginStatusInfo: &serverclientcommon.PluginStatusInfo{
+				DbPluginInfo: pluginInfo,
+			},
+			logger: logger,
 		}
 		m.pluginMap.Set(pluginInfo.Id, pluginStatusInfo)
+		if pluginInfo.Enable {
+			_ = m.Start(pluginStatusInfo.Id)
+		}
 	}
+}
+
+func (m *manager) Stop(idOrName string) error {
+	m.lock.Lock()
+	defer m.lock.Unlock()
+
+	pluginStatusInfo, err := m.FindOneStatusInfoByIdOrName(idOrName)
+	if err != nil {
+		return fmt.Errorf("未识别的插件信息: %s", err.Error())
+	}
+
+	pluginStatusInfo.Enable = false
+
+	if !pluginStatusInfo.CheckStatus(serverclientcommon.PluginStatusOk) {
+		return nil
+	}
+	if err = sqlite.Db().Model(pluginStatusInfo.DbPluginInfo).Update(pluginStatusInfo.DbPluginInfo).Error; err != nil {
+		return fmt.Errorf("更新插件启动信息失败: %s", err.Error())
+	}
+	pluginStatusInfo.StopTime = time.Now()
+	pluginStatusInfo.Close()
+
+	return nil
 
 }
 
-func (m *manager) InstallPlugin(pluginPath string) (res *serverclientcommon.DbPluginInfo, err error) {
+func (m *manager) Start(idOrName string) error {
+	m.lock.Lock()
+	defer m.lock.Unlock()
+
+	pluginStatusInfo, err := m.FindOneStatusInfoByIdOrName(idOrName)
+	if err != nil {
+		return fmt.Errorf("未识别的插件信息: %s", err.Error())
+	}
+
+	if pluginStatusInfo.Path == "" {
+		return fmt.Errorf("插件地址不存在: %s", err.Error())
+	}
+
+	if stat, err := os.Stat(filepath.Join(pluginStatusInfo.Path, "exec.plugin")); err != nil {
+		return fmt.Errorf("获取插件文件的信息失败: %s", err.Error())
+	} else if stat.IsDir() {
+		return fmt.Errorf("插件文件不存在或已被篡改")
+	}
+
+	if pluginStatusInfo.CheckStatus(serverclientcommon.PluginStatusOk) {
+		return nil
+	}
+
+	pluginStatusInfo.Enable = true
+	if err = sqlite.Db().Model(&serverclientcommon.DbPluginInfo{}).Update(&pluginStatusInfo.DbPluginInfo).Error; err != nil {
+		return fmt.Errorf("更新插件启动状态失败: %s", err.Error())
+	}
+
+	pluginStatusInfo.Start()
+	return nil
+}
+
+func (m *manager) Uninstall(idOrName string) error {
+	m.lock.Lock()
+	defer m.lock.Unlock()
+
+	pluginStatusExtend, err := m.FindOneStatusInfoByIdOrName(idOrName)
+	if err != nil {
+		return err
+	}
+
+	if pluginStatusExtend.CheckStatus(serverclientcommon.PluginStatusOk) {
+		return fmt.Errorf("请先停止插件后再尝试卸载")
+	}
+
+	return sqlite.Db().Transaction(func(tx *gorm.DB) error {
+		pluginModel := tx.Model(&serverclientcommon.DbPluginInfo{})
+		if err = pluginModel.Delete(&serverclientcommon.DbPluginInfo{
+			Id: pluginStatusExtend.Id,
+		}).Error; err != nil {
+			return fmt.Errorf("删除插件信息失败: %s", err.Error())
+		}
+
+		os.RemoveAll(pluginStatusExtend.Path)
+		m.pluginMap.Delete(pluginStatusExtend.Id)
+		os.RemoveAll(pluginStatusExtend.Path)
+		return nil
+	})
+
+}
+
+func (m *manager) Install(pluginPath string) (res *serverclientcommon.DbPluginInfo, err error) {
 	var (
 		stat os.FileInfo
 
@@ -95,7 +189,16 @@ func (m *manager) InstallPlugin(pluginPath string) (res *serverclientcommon.DbPl
 	}
 
 	pluginSavePath := filepath.Join(filepath.Dir(targetFilePath), dbPluginInfo.Id)
-	if err = os.Rename(targetFilePath, pluginSavePath); err != nil {
+	_ = os.MkdirAll(pluginSavePath, 0755)
+	if stat, err = os.Stat(pluginSavePath); err != nil {
+		return nil, fmt.Errorf("创建插件存储目录失败: %s", err.Error())
+	} else if !stat.IsDir() {
+		return nil, fmt.Errorf("获取插件存储路径失败: 非目录")
+	}
+	dbPluginInfo.Path = pluginSavePath
+
+	_pluginPath := filepath.Join(pluginSavePath, "exec.plugin")
+	if err = os.Rename(targetFilePath, _pluginPath); err != nil {
 		return nil, fmt.Errorf("插件文件保存失败: %s", err.Error())
 	}
 
@@ -108,20 +211,27 @@ func (m *manager) InstallPlugin(pluginPath string) (res *serverclientcommon.DbPl
 		m.lock.Lock()
 		defer m.lock.Unlock()
 
-		m.pluginMap.Set(dbPluginInfo.Id, &serverclientcommon.PluginStatusInfo{
-			DbPluginInfo: dbPluginInfo,
+		logger, err := NewLogger(dbPluginInfo)
+		if err != nil {
+			return fmt.Errorf("创建插件日志库失败: %s", err.Error())
+		}
+		m.pluginMap.Set(dbPluginInfo.Id, &PluginStatusExtend{
+			PluginStatusInfo: &serverclientcommon.PluginStatusInfo{
+				DbPluginInfo: dbPluginInfo,
+			},
+			logger: logger,
 		})
 		return nil
 	})
 
 }
 
-func (m *manager) PluginStatusInfoList() (res []*serverclientcommon.PluginStatusInfo) {
+func (m *manager) StatusInfoList() (res []*PluginStatusExtend) {
 	m.lock.Lock()
 	defer m.lock.Unlock()
 	keys := m.pluginMap.Keys()
 	keyLen := len(keys)
-	res = make([]*serverclientcommon.PluginStatusInfo, 0, keyLen)
+	res = make([]*PluginStatusExtend, 0, keyLen)
 	if keyLen == 0 {
 		return
 	}
@@ -133,7 +243,7 @@ func (m *manager) PluginStatusInfoList() (res []*serverclientcommon.PluginStatus
 			continue
 		}
 
-		pluginStatusInfo, ok := d.(*serverclientcommon.PluginStatusInfo)
+		pluginStatusInfo, ok := d.(*PluginStatusExtend)
 		if !ok {
 			continue
 		}
@@ -143,8 +253,11 @@ func (m *manager) PluginStatusInfoList() (res []*serverclientcommon.PluginStatus
 	return
 }
 
-func (m *manager) FindOnePluginStatusInfoByIdOrName(idOrName string) (*serverclientcommon.PluginStatusInfo, error) {
-	pluginList, err := m.pluginMatchNum(1, func(key string, val *serverclientcommon.PluginStatusInfo) bool {
+func (m *manager) FindOneStatusInfoByIdOrName(idOrName string) (*PluginStatusExtend, error) {
+	if m.lock.TryLock() {
+		defer m.lock.Unlock()
+	}
+	pluginList, err := m.matchNum(1, func(key string, val *PluginStatusExtend) bool {
 		return idOrName == val.Id || idOrName == val.Name
 	})
 	if err != nil {
@@ -153,18 +266,19 @@ func (m *manager) FindOnePluginStatusInfoByIdOrName(idOrName string) (*servercli
 	return pluginList[0], nil
 }
 
-func (m *manager) FindPluginStatusInfoByIdOrName(idOrName string) (res []*serverclientcommon.PluginStatusInfo) {
-	return m.pluginFilter(func(key string, val *serverclientcommon.PluginStatusInfo) bool {
+func (m *manager) FindStatusInfoByIdOrName(idOrName string) (res []*PluginStatusExtend) {
+	return m.filter(func(key string, val *PluginStatusExtend) bool {
 		return strings.HasPrefix(val.Id, idOrName) || strings.HasPrefix(val.Name, idOrName)
 	})
 }
 
-func (m *manager) pluginMatchNum(num int, fn func(key string, val *serverclientcommon.PluginStatusInfo) bool) (res []*serverclientcommon.PluginStatusInfo, err error) {
-	m.lock.Lock()
-	defer m.lock.Unlock()
+func (m *manager) matchNum(num int, fn func(key string, val *PluginStatusExtend) bool) (res []*PluginStatusExtend, err error) {
+	if m.lock.TryLock() {
+		defer m.lock.Unlock()
+	}
 
 	keys := m.pluginMap.Keys()
-	res = make([]*serverclientcommon.PluginStatusInfo, 0, len(keys))
+	res = make([]*PluginStatusExtend, 0, len(keys))
 
 	index := 0
 	for i := range keys {
@@ -174,7 +288,7 @@ func (m *manager) pluginMatchNum(num int, fn func(key string, val *serverclientc
 			continue
 		}
 
-		pluginInfo, ok := val.(*serverclientcommon.PluginStatusInfo)
+		pluginInfo, ok := val.(*PluginStatusExtend)
 		if !ok {
 			continue
 		}
@@ -209,7 +323,7 @@ func (m *manager) pluginMatchNum(num int, fn func(key string, val *serverclientc
 
 }
 
-func (m *manager) pluginFilter(fn func(key string, val *serverclientcommon.PluginStatusInfo) bool) (res []*serverclientcommon.PluginStatusInfo) {
-	res, _ = m.pluginMatchNum(0, fn)
+func (m *manager) filter(fn func(key string, val *PluginStatusExtend) bool) (res []*PluginStatusExtend) {
+	res, _ = m.matchNum(0, fn)
 	return res
 }

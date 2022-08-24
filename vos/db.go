@@ -41,3 +41,11 @@ type DbServerInfo struct {
 	// Content 内容存放
 	Content ServerInfoContent
 }
+
+// DbPluginLog 插件日志
+type DbPluginLog struct {
+	Id      uint64 `gorm:"primary_key;"`
+	Time    string
+	Content string
+	Level   string
+}
